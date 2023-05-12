@@ -1,9 +1,11 @@
 import mitt, { Emitter } from 'mitt'
 import * as React from 'react'
 import {
+  Dimensions,
   findNodeHandle,
   StyleProp,
   StyleSheet,
+  UIManager,
   View,
   ViewStyle,
 } from 'react-native'
@@ -82,6 +84,8 @@ export const TourGuideProvider = ({
 
   const modal = useRef<any>()
 
+  const screenHeight = Dimensions.get('screen').height
+
   useEffect(() => {
     if (mounted && visible[tourKey] === false) {
       eventEmitter[tourKey]?.emit('stop')
@@ -140,16 +144,49 @@ export const TourGuideProvider = ({
     })
   }
 
-  const setCurrentStep = async (key: string, step?: IStep) =>
+  const setCurrentStep = (key: string, step?: IStep) =>
     new Promise<void>((resolve) => {
       if (scrollRef && step) {
-        await step.wrapper.measureLayout(
-          findNodeHandle(scrollRef.current),
-          (_x: number, y: number, _w: number, h: number) => {
-            const yOffsett = y > 0 ? y - h / 2 : 0
-            scrollRef.current.scrollTo({ y: yOffsett, animated: false })
-          },
-        )
+        try {
+          const scrollViewNode = findNodeHandle(scrollRef.current)
+          const itemNode = findNodeHandle(step.wrapper)
+          if (scrollViewNode && itemNode) {
+            ;(UIManager as any).viewIsDescendantOf(
+              itemNode,
+              scrollViewNode,
+              async (isAncestor: boolean) => {
+                if (isAncestor) {
+                  step.wrapper?.measureLayout(
+                    scrollViewNode,
+                    (_x: number, y: number, _w: number, h: number) => {
+                      const yOffsett =
+                        y + h > screenHeight * 0.95
+                          ? y - screenHeight * 0.8 + h
+                          : 0
+                      scrollRef.current?.scrollTo({
+                        y: yOffsett,
+                        animated: false,
+                      })
+                    },
+                    () => {
+                      // if failed, this node is not child of Scrollview
+                      scrollRef.current?.scrollTo({ y: 0, animated: false })
+                    },
+                  )
+                } else {
+                  // the Step wrapper is out of Scrollview
+                  scrollRef.current?.scrollTo({ y: 0, animated: false })
+                }
+              },
+            )
+          } else {
+            scrollRef.current?.scrollTo({ y: 0, animated: false })
+          }
+        } catch (error) {
+          console.info('--- Failed to get descendant Node --', error)
+          scrollRef.current?.scrollTo({ y: 0, animated: false })
+        }
+
         setTimeout(() => {
           updateCurrentStep((currentStep) => {
             const newStep = { ...currentStep }
